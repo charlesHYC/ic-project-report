@@ -1,0 +1,4 @@
+# name          t_start   t_end    signals
+walk             28000    150000   clk busy burst_n ch_num ch0_addr
+burst            30000     62000   clk awvalid wvalid wlast ch0_wdata
+done            140000    170000   clk busy done cycles

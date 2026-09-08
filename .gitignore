@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+# simulation and viewer leftovers
+csrc/
+*.daidir/
+simv*
+*.fsdb
+*.vcd
+verdiLog/
+novas.rc
+novas.conf
+novas_dump.log
+ucli.key
+example/sample_new/
+*_standalone.html
