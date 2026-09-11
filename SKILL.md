@@ -56,11 +56,18 @@ figures 檔一行一張圖：
 ```
 # name        t_start   t_end     signals（相對 top 的路徑，dut/foo 可用）
 launch        50000     132000    clk go busy arvalid arready ch0_araddr
-data         152000     260000    clk ch0_rvalid ch0_rlast ch0_rdata
-done        4180000    4262000    clk busy done cycles
+data         152000     260000    clk ch0_rvalid ch0_rlast ch0_rdata len:dec
+credits      400000    9000000    clk busy tags:dec inflight:analog
 ```
 
-### 四個會安靜失敗的地方
+訊號後面可加顯示格式：`:dec`（無號十進位）、`:hex`（預設）、`:bin`、`:analog`（畫成曲線）。
+**長度、計數、tag、指標一律用 `:dec`**——讀者不該為了驗證一句話先把 0x80 換算成 128。
+`:analog` 的訊號放在該行最後，其他訊號的位置才不會移動。
+
+腳本會依訊號數自動決定視窗高度，寬度用環境變數 `FIG_W`（預設 1280；報告裡的圖大約顯示 900 px 寬，
+截得太寬字會被縮到看不清）。截完會裁掉 Verdi 的工具列與底部尺規，`CROP=0` 保留原圖。
+
+### 會安靜失敗的地方
 
 **① FSDB 的時間單位通常是 ps，不是 ns。** `wvZoom` 的參數用該單位。
 給 ns 的數值會縮放到訊號還沒開始跳動的位置，得到一張全零的圖，而且**不會有任何錯誤**。
@@ -84,6 +91,37 @@ puts [wvGetFileTimeRange -win $_nWave2]
 ```tcl
 set fh [open /tmp/cmds.txt w]; puts $fh [join [lsort [info commands wv*]] "\n"]; close $fh
 ```
+
+以下幾項腳本都已處理，列出來是因為自己寫 Tcl 時會再踩一次，而且全部**回傳成功、不印錯誤**：
+
+**⑤ 預設截圖只有 900×317，大約十個訊號。** 多的訊號被捲出畫面上方，圖上看不出少了東西。
+`wvResizeWindow` 回傳成功但沒有效果——波形面板是嵌在主視窗裡的 dock。要改主視窗大小再把 dock 最大化：
+
+```tcl
+verdiWindowResize -win $_Verdi_1 "0" "0" "1280" "600"
+verdiDockWidgetMaximize -dock windowDock_nWave_2
+```
+
+截圖高度 = 主視窗高度 − 98 px；一列數位訊號 20 px，一列類比約 100 px。
+
+**⑥ `verdiDockWidgetMaximize` 是切換。** 每張圖都呼叫一次的話，第二、四、六……張會被還原成約 200 px 高，
+大半訊號捲出畫面。只在開頭呼叫一次，之後每張圖只調 `verdiWindowResize`。
+
+**⑦ 選訊號要傳字串 `"( \"G1\" 2 5 7 )"`，也就是 Verdi 自己記錄在 `verdiLog/verdi.cmd` 的格式。**
+傳 Tcl list `{G1 2 5 7}` 也會回傳成功，但什麼都沒選，接著的 `wvSetRadix` 就安靜地不生效。
+
+**⑧ `wvDigitalToAnalog` 不是原地轉換。** 它在最下面加一條類比副本（名稱自動加上 `DtoA_`），
+原本的數位列還留著，變成一條密到看不清的匯流排。要按位置再選一次原列、`wvCut` 掉。
+
+**⑨ 名稱欄大約只顯示 13 個字元，連 `[msb:lsb]` 一起算，超過的從左邊截掉。**
+`wvSetSubWindow` 回傳成功但沒有效果；`wvSplitWindow` 會把波形面板切成上下兩半。
+唯一的辦法是讓訊號名夠短，這一條要在寫 TB 輔助訊號時就考慮（見下一節）。
+
+**⑩ Verdi 會在工作目錄寫 `verdiLog/`、`novas.rc`、`novas.conf`。** 在使用者的 repo 裡跑會把這些混進去。
+腳本在暫存目錄執行 Verdi。
+
+**⑪ 截圖底部那條尺規標的是整個波形檔的時間範圍，不是這張圖的。** 讀者會把它當成這張圖的時間軸。
+腳本會把它和上方工具列一起裁掉。
 
 ### 讓波形看得懂：在 TB 裡替扁平匯流排取名字
 
@@ -112,6 +150,24 @@ always @(posedge clk)
     else for (i = 0; i < N; i = i + 1)
         if (awvalid[i] && awready[i]) ch_num <= i;   // 保持，不回閒置值
 ```
+
+⚠️ **只在封包第一拍有效的欄位，要從 sop 保持到封包結束。**
+PCIe TLP、乙太網 frame 的標頭只在 sop 那一拍有定義。有些 RTL 在後續每一拍都會重算標頭暫存器
+（例如 Corundum 的 DMA 寫入引擎用遞減中的 DW 計數重算 length），波形上的 length 就會一路倒數，
+看起來像 bug。把 sop 那一拍的值鎖住：
+
+```verilog
+reg  [9:0] len_q = 0;                                   // 初值給 0，否則開頭一段是紅色 X
+always @(posedge clk) if (valid && ready && sop) len_q <= hdr[105:96];
+wire [9:0] tlp_len = (valid && sop) ? hdr[105:96] : len_q;
+```
+
+⚠️ **輔助訊號名連 `[msb:lsb]` 在內控制在 13 個字元以內**（原因見上一節 ⑨）。
+`desc_len[15:0]` 已經 14 個字元，會被截成 `esc_len[15:0]`；改叫 `d_len`。報告的圖說再寫一次名稱對照。
+
+**不改 DUT 也不包 wrapper 的做法：** 輔助訊號放在一個獨立的頂層模組，以階層參照讀 DUT
+（`wire x = dut_top.some_reg;`），與 DUT 一起編譯成兩個 root。cocotb 的 TOPLEVEL 仍是 DUT，
+Icarus 加 `-s <輔助模組>` 即可；它也可以順便負責 `$dumpfile` / `$dumpvars`。
 
 ### 一張圖只證明一件事
 
@@ -149,6 +205,27 @@ end
 ⚠️ **Verdi 2024.09 廢止了 `-P novas.tab pli.a`。** 用舊旗標時
 **VCS 仍能正常編譯與執行，但每個 `$fsdbDump*` 都失敗、不產生任何檔案**，
 只留一行容易漏看的訊息。
+
+### 不用 VCS：cocotb + Icarus 的波形
+
+開源流程（cocotb 的測試平台、Icarus 模擬）一樣能用 Verdi 出圖。Icarus 只寫 FST，Verdi 只讀 FSDB，
+沒有直接轉換的工具，要經過 VCD：
+
+```sh
+fst2vcd -f waves.fst -o waves.vcd          # GTKWave 附帶
+grep -A1 '^\$timescale' waves.vcd          # cocotb 預設 1ps；figures 檔的時間就用 ps
+vcd2fsdb waves.vcd -o waves.fsdb           # Verdi 附帶
+```
+
+figures 檔的時間窗最好不要手算：讓測試程式把每個情境的關鍵事件（握手、第一個請求、狀態）
+連同 cycle 數寫進 JSON，時間窗從 JSON 取，報告引用的數字也從同一個 JSON 取。
+
+兩個容易卡住的地方：
+
+- **cocotb-test 0.2.x 與 cocotb 1.7 不相容，import 就失敗。** 很多上游測試檔開頭會
+  `import cocotb_test.simulator`（給 pytest 用）。自己寫的測試不要 import 它，用 make 跑。
+- **上游 tb 目錄常用 symlink 共用模型檔**（例如 Corundum 的 `pcie_if.py -> ../pcie_if.py`）。
+  只複製單一 tb 目錄時 symlink 會斷，cocotb 只報 `No module named ...`。把模型檔實際複製過來。
 
 ---
 
@@ -239,7 +316,7 @@ python3 scripts/embed.py report.html -o report_standalone.html
 
 | 檔案 | 說明 |
 |---|---|
-| `scripts/verdi_capture.sh` | 由 figures 檔驅動 Verdi 匯出波形。完全通用 |
+| `scripts/verdi_capture.sh` | 由 figures 檔驅動 Verdi 匯出波形：自動調整視窗大小、每個訊號可指定進位制或類比顯示、裁掉工具列與整檔尺規、在暫存目錄執行。完全通用 |
 | `scripts/embed.py` | 把 CSS 與圖內嵌成單一 HTML；引用不到會失敗而不是默默略過 |
 | `assets/report.css` | 報告樣式 |
 
