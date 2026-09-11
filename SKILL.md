@@ -214,8 +214,11 @@ end
 ```sh
 fst2vcd -f waves.fst -o waves.vcd          # GTKWave 附帶
 grep -A1 '^\$timescale' waves.vcd          # cocotb 預設 1ps；figures 檔的時間就用 ps
-vcd2fsdb waves.vcd -o waves.fsdb           # Verdi 附帶
+vcd2fsdb waves.vcd -o waves.fsdb           # Verdi 附帶；會在工作目錄留下 vcd2fsdbLog/
 ```
+
+vcd2fsdb 和 Verdi 一樣會在執行的目錄寫記錄檔，在 repo 裡跑之前先 `cd` 到暫存目錄，
+不然 `git add -A` 會把 `vcd2fsdbLog/` 一起提交。
 
 figures 檔的時間窗最好不要手算：讓測試程式把每個情境的關鍵事件（握手、第一個請求、狀態）
 連同 cycle 數寫進 JSON，時間窗從 JSON 取，報告引用的數字也從同一個 JSON 取。
