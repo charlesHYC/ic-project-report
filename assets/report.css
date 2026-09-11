@@ -15,6 +15,10 @@ h2 .sn{display:inline-block;min-width:1.9em;}
 h3{font-size:12.5pt;font-weight:700;margin:26px 0 9px;}
 h4{font-size:11.5pt;font-weight:700;margin:18px 0 6px;color:var(--ink2);}
 p{margin:9px 0;text-align:justify;}
+/* A long inline code token that wraps to the next line leaves the line before
+   it justified across the full width, and CJK text spreads out character by
+   character. Paragraphs carrying code are set ragged-right instead. */
+p:has(code),p:has(.mono){text-align:left;}
 ul,ol{margin:9px 0 9px 26px;} li{margin:4px 0;}
 code,.mono{font-family:"DejaVu Sans Mono",Consolas,monospace;font-size:.88em;
  background:var(--soft);padding:1px 4px;border-radius:2px;}

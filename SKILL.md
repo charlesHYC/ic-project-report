@@ -206,10 +206,13 @@ for s in 1 7 42 123 999 31337; do ./simv +ntb_random_seed=$s; done
    舊值若出現，確認它是在「說明更正歷程」而不是殘留的錯誤宣稱。
 
 ```sh
-MOZ_HEADLESS=1 firefox --headless --screenshot "$PWD/out.png" \
+P=$(mktemp -d)    # a private profile: an open Firefox cannot lock it or take the request over
+MOZ_HEADLESS=1 firefox --headless --no-remote --profile "$P" --screenshot "$PWD/out.png" \
   --window-size=1200,30000 "file://$PWD/report.html"
 ```
 ⚠️ `--screenshot` 給相對路徑時 firefox **不會報錯也不產生檔案**，一律用絕對路徑。
+⚠️ 不加 `--no-remote --profile` 時，若使用者已經開著 Firefox，預設 profile 會被鎖住或請求被接走，
+結果同樣是沒有圖、也沒有錯誤訊息。
 
 ---
 
@@ -223,6 +226,9 @@ python3 scripts/embed.py report.html -o report_standalone.html
 
 樣式用 `assets/report.css`：黑白學術風、serif 內文、圖滿版、
 `.box` 放重點、`.mono` 標識別字、螢幕優先但列印也乾淨。**禁 emoji。**
+內文兩端對齊，但含 `<code>` 或 `.mono` 的段落改為靠左：行尾一長串不能斷行的識別字被推到下一行時，
+兩端對齊會把前一行的中文逐字拉開。自訂 CSS 時保留 `p:has(code),p:has(.mono){text-align:left}`
+（Firefox 121+、Chrome 105+ 支援 `:has`）。
 
 ⚠️ 用 Python 的 `%` 格式化組合中文報告會出事——中文段落裡的「%」會被當成格式指示字元。
 用 `str.replace()` 的佔位符替換，並在最後 assert 沒有殘留佔位符。
